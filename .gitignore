@@ -21,7 +21,7 @@ pids
 
 # Build directories
 /dist
-/build
+/build 
 
 # Coverage directory used by testing tools
 /coverage
