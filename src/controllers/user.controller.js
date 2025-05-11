@@ -1,9 +1,8 @@
 const bcrypt = require("bcrypt");
 const mongoose = require("mongoose");
 const User = require("../models/user.model.js");
-const Subscription = require("../models/subscription.model.js")
+const Subscription = require("../models/subscription.model.js");
 const { uploadOnCloudinary } = require("../utils/cloudinay.js");
-
 
 const register = async (req, res) => {
   try {
@@ -19,7 +18,7 @@ const register = async (req, res) => {
       username,
       email,
       phone,
-      password
+      password,
     });
     if (!registerNewUser) {
       return res.status(400).json({ msg: "User registration failed" });
@@ -48,94 +47,68 @@ const login = async (req, res) => {
     }
     return res
       .status(200)
-      .json({ msg: "Logged in Successfully", user: existedUser, token: await existedUser.generateToken() });
+      .json({
+        msg: "Logged in Successfully",
+        user: existedUser,
+        token: await existedUser.generateToken(),
+      });
   } catch (error) {
     return res.status(500).json({ msg: "Internal server error" });
   }
 };
 
-const updateDetails = async (req, res) => {
+const updateUserProfile = async (req, res) => {
   try {
-    const updateData = req.body;
+    const fetchedData = req.body;
+    const files = req.files;
     const { userId } = req.user;
-    if(!userId){
-      return res.status(401).json({msg:"unauthorized request"})
+
+    if (!userId) {
+      return res.status(401).json({ msg: "Unauthorized request" });
     }
 
-    const fieldToBeUpdated = Object.keys(updateData);
-    if (fieldToBeUpdated.length === 0) {
-      return res.status(400).json({ msg: "No fields provided for update" });
-    }
-    const field = fieldToBeUpdated[0];
-    const updatedUser = await User.findByIdAndUpdate(
-      { _id: userId },
-      { $set: { [field]: updateData[field] } },
-      { new: true }
-    );
-    if (!updatedUser) {
-      return res.status(400).json({ msg: "User not found" });
-    }
-    return res.status(200).json({ msg: "user updated successfully" });
-  } catch (error) {
-    return res.status(500).json({ msg: "Internal Server Error" });
-  }
-};
+    let updateData = {};
 
-const updateAvatar = async (req, res) => {
-  try {
-    const avatarFile = req.file?.path;
-    const { userId } = req.user;
-    if(!userId){
-      return res.status(401).json({msg:"unauthorized request"})
+    // Handle non-file fields (e.g., fullName, password)
+    if (fetchedData && Object.keys(fetchedData).length > 0) {
+      const userUpdateField = Object.keys(fetchedData)[0];
+      const userUpdateData = fetchedData[userUpdateField];
+
+      if (userUpdateField === "password") {
+        const salt = await bcrypt.genSalt(10);
+        updateData.password = await bcrypt.hash(userUpdateData, salt);
+      } else {
+        updateData[userUpdateField] = userUpdateData;
+      }
     }
 
-    const uploadAvatar = await uploadOnCloudinary(avatarFile);
-    if (!uploadAvatar) {
-      return res.status(500).json({ msg: "Internal Server Error" });
+    // Handle file fields (avatar or cover)
+    if (files && Object.keys(files).length > 0) {
+      const fileKey = Object.keys(files)[0];
+      const fileArray = files[fileKey];
+
+      if (fileArray && fileArray.length > 0) {
+        const uploadResult = await uploadOnCloudinary(fileArray[0].path);
+        if (!uploadResult) {
+          return res.status(500).json({ msg: "Failed to upload image" });
+        }
+
+        updateData[fileKey] = uploadResult.url;
+      }
     }
 
-    const updatedUser = await User.findByIdAndUpdate(
-      { _id: userId },
-      { $set: { ["avatar"]: uploadAvatar?.url } },
-      {new:true}
-    );
-
-    if (!updatedUser) {
-      return res.status(404).json({ msg: "User Not Found" });
-    }
-
-    return res.status(200).json({ msg: "avatar updated successfylly" });
-  } catch (error) {
-    return res.status(500).json({ msg: "Internal Server Error" });
-  }
-};
-
-const updateCover = async (req, res) => {
-  try {
-    const coverFile = req.file?.path;
-    const { userId } = req.user;
-    if(!userId){
-      return res.status(401).json({msg:"unauthorized request"})
-    }
-
-    const uploadCover = await uploadOnCloudinary(coverFile);
-    if (!uploadCover) {
-      return res.status(500).json({ msg: "Internal Server Error" });
-    }
-
-    const updatedUser = await User.findByIdAndUpdate(
-      { _id: userId },
-      { $set: { ["cover"]: uploadCover?.url } },
-      {new:true}
-    );
+    const updatedUser = await User.findByIdAndUpdate(userId, updateData, {
+      new: true,
+      runValidators: true,
+    });
 
     if (!updatedUser) {
-      return res.status(404).json({ msg: "User Not Found" });
+      return res.status(404).json({ msg: "User not found" });
     }
 
-    return res.status(200).json({ msg: "cover updated successfylly" });
+    res.status(200).json({ msg: "Profile updated successfully", user: updatedUser });
   } catch (error) {
-    return res.status(500).json({ msg: "Internal Server Error" });
+    res.status(500).json({ msg: "Internal Server Error", error: error.message });
   }
 };
 
@@ -172,23 +145,100 @@ const subscribeAndUnsubscribe = async (req, res) => {
   }
 };
 
-const getCreator = async(req,res)=>{
+const getCreator = async (req, res) => {
   try {
-    const {userId} = req.body;
-    if(!userId){
-      return res.status(400).json({msg:"Invalid userId"})
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(400).json({ msg: "Invalid userId" });
     }
 
-    const user = await User.findOne({_id:userId}).select("-password");
+    const user = await User.findOne({ _id: userId }).select("-password");
 
-    if(!user){
-      return res.status(404).json({msg:"user not found"})
+    if (!user) {
+      return res.status(404).json({ msg: "user not found" });
     }
-    return res.status(200).json({msg:"user fetched successfully", user:user})
+    return res
+      .status(200)
+      .json({ msg: "user fetched successfully", user: user });
   } catch (error) {
-    return res.status(500).json({msg:"Internal Server Error"})
+    return res.status(500).json({ msg: "Internal Server Error" });
+  }
+};
+
+const getCreators = async (req, res) => {
+  try {
+    const channels = await User.find().select("-password");
+    if (!channels) {
+      return res.status(404).json({ msg: "no channel exists" });
+    }
+    return res
+      .status(200)
+      .json({ msg: "channels fetched successfully", channels: channels });
+  } catch (error) {
+    return res.status(500).json({ msg: "Internal Server Error" });
+  }
+};
+
+const searchCreators = async (req, res) => {
+  try {
+    const { query } = req.body;
+
+    if (!query) {
+      return res.status(404).json({ msg: "no channel exists" });
+    }
+    const creators = await User.find({ username: query });
+    if (!creators) {
+      return res.status(404).json({ msg: "no channel exists" });
+    }
+    return res
+      .status(200)
+      .json({ msg: "creators fetched successfully", creators: creators });
+  } catch (error) {
+    return res.status(500).json({ msg: "Internal Server Error" });
+  }
+};
+
+const totalSubscribers = async(req, res)=>{
+  try {
+    const {creatorId} = req.body;
+    if(!creatorId){
+      return res.status(404).json({ msg: "no creator exists" });
+    }
+    const total = await Subscription.find({subscribedTo:creatorId});
+
+    return res.status(200).json({total:total.length})
+  } catch (error) {
+    return res.status(500).json({ msg: "Internal Server Error" });
   }
 }
 
+const checkSubscription = async (req, res) => {
+  try {
+    const { channelId } = req.body;
+    const { userId } = req.user;
 
-module.exports = { register, login, updateDetails, updateCover, updateAvatar , subscribeAndUnsubscribe, getCreator};
+    const alreadySubscribed = await Subscription.findOne({
+      subscribedBy: userId,
+      subscribedTo: channelId,
+    });
+    if(!alreadySubscribed){
+      return res.status(200).json({ isSubscribed: false });
+    }
+
+    return res.status(200).json({ isSubscribed: true });
+  } catch (error) {
+    return res.status(500).json({ msg: "Internal Server Error" });
+  }
+};
+
+module.exports = {
+  register,
+  login,
+  updateUserProfile,
+  subscribeAndUnsubscribe,
+  getCreator,
+  getCreators,
+  searchCreators,
+  totalSubscribers,
+  checkSubscription
+};

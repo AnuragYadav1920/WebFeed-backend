@@ -1,5 +1,6 @@
 const mongoose = require("mongoose");
 const { uploadOnCloudinary } = require("../utils/cloudinay.js");
+const User = require("../models/user.model.js");
 const Blog = require("../models/blog.model.js");
 const Like = require("../models/like.model.js");
 
@@ -34,7 +35,7 @@ const createPost = async (req, res) => {
       return res.status(500).json({ msg: "Failed to create the post" });
     }
 
-    await createdPost.populate('creator')
+    await createdPost.populate("creator");
 
     return res
       .status(201)
@@ -58,14 +59,17 @@ const updatePostDetails = async (req, res) => {
     if (!(title && category && description)) {
       return res.status(400).json({ msg: "details missing" });
     }
-    if (!postImageFile) {
-      return res.status(400).json({ msg: "Image file is required" });
+    let postImageUpdated = false;
+    let updatedPostImageUrl = "";
+    if (postImageFile) {
+      const uploadPostImage = await uploadOnCloudinary(postImageFile);
+      if (!uploadPostImage || !uploadPostImage.url) {
+        return res.status(500).json({ msg: "Image upload failed" });
+      }
+      postImageUpdated = true;
+      updatedPostImageUrl = uploadPostImage?.url;
     }
-
-    const uploadPostImage = await uploadOnCloudinary(postImageFile);
-    if (!uploadPostImage || !uploadPostImage.url) {
-      return res.status(500).json({ msg: "Image upload failed" });
-    }
+    const prevPost = await Blog.findById(postId);
 
     const updatedPost = await Blog.findByIdAndUpdate(
       postId,
@@ -74,7 +78,9 @@ const updatePostDetails = async (req, res) => {
           title: title,
           category: category,
           description: description,
-          postImage: uploadPostImage?.url,
+          postImage: postImageUpdated
+            ? updatedPostImageUrl
+            : prevPost.postImage,
         },
       },
       { new: true }
@@ -155,11 +161,11 @@ const getPostById = async (req, res) => {
     if (!postId) {
       return res.status(400).json({ msg: "postId is missing" });
     }
-    const post = await Blog.findById(postId).populate('creator');
+    const post = await Blog.findById(postId).populate("creator");
     if (!post) {
       return res.status(404).json({ msg: "post not found" });
     }
-    
+
     return res
       .status(200)
       .json({ msg: "post fetched successfully", post: post });
@@ -170,9 +176,9 @@ const getPostById = async (req, res) => {
 
 const getAllPosts = async (req, res) => {
   try {
-    const allPosts = await Blog.find().populate('creator');
-    if(!allPosts){
-      return res.status(404).json({msg:"No posts found"})
+    const allPosts = await Blog.find().populate("creator");
+    if (!allPosts) {
+      return res.status(404).json({ msg: "No posts found" });
     }
     return res.status(200).json({ msg: "All posts found", posts: allPosts });
   } catch (error) {
@@ -180,23 +186,67 @@ const getAllPosts = async (req, res) => {
   }
 };
 
-
-const getCreatorPosts = async(req, res)=>{
+const getCreatorPosts = async (req, res) => {
   try {
-    const {userId} = req.body;
-    if(!userId){
-      return res.status(404).json({msg:"Invalid creator"})
+    const { userId } = req.body;
+    if (!userId) {
+      return res.status(404).json({ msg: "Invalid creator" });
     }
 
-    const posts = await Blog.find({creator:userId}).populate('creator')
+    const posts = await Blog.find({ creator: userId }).populate("creator");
 
-    if(!posts){
-      return res.status(404).json({msg:"no posts found"})
+    if (!posts) {
+      return res.status(404).json({ msg: "no posts found" });
     }
 
-    return res.status(200).json({msg:"posts fetched successfully",posts:posts})
+    return res
+      .status(200)
+      .json({ msg: "posts fetched successfully", posts: posts });
   } catch (error) {
-    return res.status(500).json({msg:"Internal Server Error"})
+    return res.status(500).json({ msg: "Internal Server Error" });
+  }
+};
+
+const getCreatorDetails = async (req, res) => {
+  try {
+    const { username } = req.body;
+    if (!username) {
+      return res.status(404).json({ msg: "Invalid creator" });
+    }
+
+    const userDetails = await User.findOne({ username: username }).select(
+      "-password"
+    );
+    if (!userDetails) {
+      return res.status(404).json({ msg: "Invalid creator" });
+    }
+    const creatorId = userDetails._id;
+    const posts = await Blog.find({ creator: creatorId });
+
+    if (!posts) {
+      return res.status(404).json({ msg: "no posts found" });
+    }
+
+    return res.status(200).json({
+      msg: "posts fetched successfully",
+      posts: posts,
+      creator: userDetails,
+    });
+  } catch (error) {
+    return res.status(500).json({ msg: "Internal Server Error" });
+  }
+};
+
+const totalLikes = async(req, res)=>{
+  try {
+    const {postId} = req.body;
+    if(!postId){
+      return res.status(404).json({ msg: "Invalid postId" });
+    }
+    const total = await Like.find({likedPostId:postId})
+    return res.status(200).json({total:total.length})
+  } catch (error) {
+    return res.status(500).json({ msg: "Internal Server Error" });
   }
 }
 
@@ -207,5 +257,7 @@ module.exports = {
   likeAndDislike,
   getPostById,
   getAllPosts,
-  getCreatorPosts
+  getCreatorPosts,
+  getCreatorDetails,
+  totalLikes
 };

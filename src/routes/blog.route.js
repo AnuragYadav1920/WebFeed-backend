@@ -11,6 +11,7 @@ router.route("/like-and-dislike").post(verifyJWT, blogControllers.likeAndDislike
 router.route("/get-singlepost").post(blogControllers.getPostById)
 router.route("/get-all-posts").get(blogControllers.getAllPosts)
 router.route("/get-creator-posts").post(blogControllers.getCreatorPosts)
-
+router.route("/get-creator").post(blogControllers.getCreatorDetails)
+router.route("/get-likes").post(blogControllers.totalLikes)
 
 module.exports = router
